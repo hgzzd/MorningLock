@@ -1,9 +1,7 @@
 package com.morninglock.data
 
-import com.morninglock.util.TimeUtils
 import org.junit.Assert.*
 import org.junit.Test
-import java.util.Calendar
 
 class LockStateTest {
 
@@ -62,6 +60,37 @@ class LockStateTest {
             endHour = 10, endMinute = 0
         )
         assertFalse(result)
+    }
+
+    @Test
+    fun `锁定进行中不应再次触发`() {
+        val currentTime = now()
+        val lockStart = currentTime - 5 * 60 * 1000L
+        val result = LockState.shouldTriggerLockWithActiveCheck(
+            lastTriggeredTimestamp = 0L,
+            lockStartTimestamp = lockStart,
+            lockDurationMillis = LOCK_DURATION_MS,
+            currentTimeMillis = currentTime,
+            currentHour = 7, currentMinute = 0,
+            startHour = 6, startMinute = 0,
+            endHour = 10, endMinute = 0
+        )
+        assertFalse(result)
+    }
+
+    @Test
+    fun `无进行中锁定且今天未触发应触发`() {
+        val currentTime = now()
+        val result = LockState.shouldTriggerLockWithActiveCheck(
+            lastTriggeredTimestamp = 0L,
+            lockStartTimestamp = 0L,
+            lockDurationMillis = LOCK_DURATION_MS,
+            currentTimeMillis = currentTime,
+            currentHour = 7, currentMinute = 0,
+            startHour = 6, startMinute = 0,
+            endHour = 10, endMinute = 0
+        )
+        assertTrue(result)
     }
 
     // --- isLockActive ---

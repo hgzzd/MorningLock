@@ -21,6 +21,8 @@ import com.google.android.material.switchmaterial.SwitchMaterial
 import com.morninglock.data.LockPreferences
 import com.morninglock.service.LockService
 import com.morninglock.util.AlarmScheduler
+import com.morninglock.util.TimeUtils
+import java.util.Calendar
 
 class MainActivity : AppCompatActivity() {
 
@@ -42,6 +44,31 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         updatePermissionButtonStates()
+        ensureServiceRunningIfNeeded()
+    }
+
+    /**
+     * 确保服务在需要时运行。
+     * 如果服务已启用且当前在生效时段内，启动 LockService。
+     */
+    private fun ensureServiceRunningIfNeeded() {
+        if (!prefs.serviceEnabled) return
+        if (!Settings.canDrawOverlays(this)) return
+
+        val cal = Calendar.getInstance()
+        val isInPeriod = TimeUtils.isInTimePeriod(
+            cal.get(Calendar.HOUR_OF_DAY),
+            cal.get(Calendar.MINUTE),
+            prefs.startHour,
+            prefs.startMinute,
+            prefs.endHour,
+            prefs.endMinute
+        )
+
+        if (isInPeriod) {
+            // 确保闹钟已设置
+            AlarmScheduler.scheduleDaily(this, prefs)
+        }
     }
 
     // --- 服务开关 ---

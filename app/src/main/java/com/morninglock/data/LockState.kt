@@ -25,6 +25,33 @@ object LockState {
     }
 
     /**
+     * 判断是否应该触发锁定，并排除“当前已有锁定进行中”的情况。
+     */
+    fun shouldTriggerLockWithActiveCheck(
+        lastTriggeredTimestamp: Long,
+        lockStartTimestamp: Long,
+        lockDurationMillis: Long,
+        currentTimeMillis: Long,
+        currentHour: Int, currentMinute: Int,
+        startHour: Int, startMinute: Int,
+        endHour: Int, endMinute: Int
+    ): Boolean {
+        if (isLockActive(lockStartTimestamp, lockDurationMillis, currentTimeMillis)) {
+            return false
+        }
+        return shouldTriggerLock(
+            lastTriggeredTimestamp = lastTriggeredTimestamp,
+            currentTimeMillis = currentTimeMillis,
+            currentHour = currentHour,
+            currentMinute = currentMinute,
+            startHour = startHour,
+            startMinute = startMinute,
+            endHour = endHour,
+            endMinute = endMinute
+        )
+    }
+
+    /**
      * 判断锁定是否仍在生效中。
      * lockStartTimestamp 为 0 表示未开始锁定。
      */
