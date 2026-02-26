@@ -49,7 +49,7 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * 确保服务在需要时运行。
-     * 如果服务已启用且当前在生效时段内，启动 LockService。
+     * 如果服务已启用且当前在生效时段内，启动 LockService 并补偿触发一次评估。
      */
     private fun ensureServiceRunningIfNeeded() {
         if (!prefs.serviceEnabled) return
@@ -68,6 +68,17 @@ class MainActivity : AppCompatActivity() {
         if (isInPeriod) {
             // 确保闹钟已设置
             AlarmScheduler.scheduleDaily(this, prefs)
+
+            // 兜底：部分机型可能漏掉 ACTION_USER_PRESENT，这里在应用回到前台时补偿评估一次。
+            startForegroundService(
+                Intent(this, LockService::class.java).apply {
+                    action = LockService.ACTION_EVALUATE_TRIGGER
+                    putExtra(
+                        LockService.EXTRA_TRIGGER_REASON,
+                        LockService.TRIGGER_REASON_APP_RESUME
+                    )
+                }
+            )
         }
     }
 

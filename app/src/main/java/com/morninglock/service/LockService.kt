@@ -24,6 +24,8 @@ class LockService : Service() {
         const val ACTION_SHOW_OVERLAY = "com.morninglock.ACTION_SHOW_OVERLAY"
         const val ACTION_EVALUATE_TRIGGER = "com.morninglock.ACTION_EVALUATE_TRIGGER"
         const val EXTRA_TRIGGER_REASON = "extra_trigger_reason"
+        const val TRIGGER_REASON_UNLOCK = "unlock"
+        const val TRIGGER_REASON_APP_RESUME = "app_resume"
         private const val CHANNEL_ID = "morning_lock_service"
         private const val NOTIFICATION_ID = 1
         private const val TAG = "LockService"
@@ -41,8 +43,6 @@ class LockService : Service() {
 
         // 服务启动时检查是否有未完成的锁定
         checkPendingLock()
-        // 兜底：服务启动时在时段内且当天未触发，立即触发一次
-        evaluateAndTriggerLockIfNeeded("service_create")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -67,15 +67,19 @@ class LockService : Service() {
     }
 
     private fun registerUnlockReceiver() {
-        unlockReceiver = ScreenUnlockReceiver()
+        unlockReceiver = ScreenUnlockReceiver {
+            Log.i(TAG, "Unlock callback invoked")
+            evaluateAndTriggerLockIfNeeded(TRIGGER_REASON_UNLOCK)
+        }
         val filter = IntentFilter(Intent.ACTION_USER_PRESENT)
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                registerReceiver(unlockReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+                registerReceiver(unlockReceiver, filter, Context.RECEIVER_EXPORTED)
+                Log.i(TAG, "Unlock receiver registered with RECEIVER_EXPORTED")
             } else {
                 registerReceiver(unlockReceiver, filter)
+                Log.i(TAG, "Unlock receiver registered")
             }
-            Log.i(TAG, "Unlock receiver registered")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to register unlock receiver", e)
         }
@@ -101,6 +105,11 @@ class LockService : Service() {
     }
 
     private fun evaluateAndTriggerLockIfNeeded(reason: String) {
+        if (reason != TRIGGER_REASON_UNLOCK && reason != TRIGGER_REASON_APP_RESUME) {
+            Log.i(TAG, "Skip trigger, unsupported reason=$reason")
+            return
+        }
+
         val prefs = LockPreferences(this)
         if (!prefs.serviceEnabled) {
             Log.i(TAG, "Skip trigger, service disabled, reason=$reason")
@@ -133,20 +142,41 @@ class LockService : Service() {
             return
         }
 
+        if (!Settings.canDrawOverlays(this)) {
+            Log.i(TAG, "Skip trigger, overlay permission missing, reason=$reason")
+            return
+        }
+
+        val previousLastTriggered = prefs.lastTriggeredTimestamp
+        val previousLockStart = prefs.lockStartTimestamp
         prefs.lastTriggeredTimestamp = now
         prefs.lockStartTimestamp = now
-        Log.i(TAG, "Trigger lock, reason=$reason, start=$now")
-        showLockOverlay()
+
+        if (showLockOverlay()) {
+            Log.i(TAG, "Trigger lock, reason=$reason, start=$now")
+            return
+        }
+
+        // 覆盖层展示失败时回滚状态，避免误记“今日已触发”。
+        prefs.lastTriggeredTimestamp = previousLastTriggered
+        prefs.lockStartTimestamp = previousLockStart
+        Log.e(TAG, "Trigger failed, rollback state, reason=$reason")
     }
 
-    private fun showLockOverlay() {
-        if (!Settings.canDrawOverlays(this)) return
+    private fun showLockOverlay(): Boolean {
+        if (!Settings.canDrawOverlays(this)) {
+            Log.i(TAG, "Skip show overlay, overlay permission missing")
+            return false
+        }
 
         val prefs = LockPreferences(this)
         val now = System.currentTimeMillis()
         val remaining = LockState.getRemainingMillis(prefs.lockStartTimestamp, prefs.lockDurationMillis, now)
 
-        if (remaining <= 0) return
+        if (remaining <= 0) {
+            Log.i(TAG, "Skip show overlay, remaining <= 0")
+            return false
+        }
 
         if (overlayManager == null) {
             overlayManager = LockOverlayManager(this)
@@ -159,7 +189,13 @@ class LockService : Service() {
         }
 
         Log.i(TAG, "Show overlay, remaining=${remaining}ms")
-        overlayManager?.showOverlay(remaining)
+        return try {
+            overlayManager?.showOverlay(remaining)
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to show overlay", e)
+            false
+        }
     }
 
     private fun createNotificationChannel() {
