@@ -93,6 +93,41 @@ class LockStateTest {
         assertTrue(result)
     }
 
+    @Test
+    fun `结束时段时锁定进行中不应停止服务`() {
+        val currentTime = now()
+        val lockStart = currentTime - 5 * 60 * 1000L
+        val shouldStop = LockState.shouldStopServiceForWindowEnd(
+            lockStartTimestamp = lockStart,
+            durationMillis = LOCK_DURATION_MS,
+            currentTimeMillis = currentTime
+        )
+        assertFalse(shouldStop)
+    }
+
+    @Test
+    fun `结束时段时无进行中锁定应停止服务`() {
+        val currentTime = now()
+        val shouldStop = LockState.shouldStopServiceForWindowEnd(
+            lockStartTimestamp = 0L,
+            durationMillis = LOCK_DURATION_MS,
+            currentTimeMillis = currentTime
+        )
+        assertTrue(shouldStop)
+    }
+
+    @Test
+    fun `结束时段时锁定已到期应停止服务`() {
+        val currentTime = now()
+        val lockStart = currentTime - LOCK_DURATION_MS
+        val shouldStop = LockState.shouldStopServiceForWindowEnd(
+            lockStartTimestamp = lockStart,
+            durationMillis = LOCK_DURATION_MS,
+            currentTimeMillis = currentTime
+        )
+        assertTrue(shouldStop)
+    }
+
     // --- isLockActive ---
 
     @Test

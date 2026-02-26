@@ -67,4 +67,16 @@ object LockState {
         val remaining = lockStartTimestamp + durationMillis - currentTimeMillis
         return maxOf(0L, remaining)
     }
+
+    /**
+     * 时段结束时是否应停止服务。
+     * 若仍有进行中的锁定，不应停止服务。
+     */
+    fun shouldStopServiceForWindowEnd(
+        lockStartTimestamp: Long,
+        durationMillis: Long,
+        currentTimeMillis: Long
+    ): Boolean {
+        return !isLockActive(lockStartTimestamp, durationMillis, currentTimeMillis)
+    }
 }

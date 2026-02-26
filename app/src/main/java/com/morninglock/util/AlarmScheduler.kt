@@ -4,6 +4,8 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.os.Build
+import android.util.Log
 import com.morninglock.data.LockPreferences
 import com.morninglock.receiver.AlarmReceiver
 import com.morninglock.service.LockService
@@ -13,6 +15,7 @@ object AlarmScheduler {
 
     private const val REQUEST_START = 1001
     private const val REQUEST_STOP = 1002
+    private const val TAG = "AlarmScheduler"
 
     /**
      * 注册每日启动/停止服务的闹钟。
@@ -24,12 +27,12 @@ object AlarmScheduler {
         // 注册启动闹钟（生效开始时间）
         val startTime = getNextAlarmTime(prefs.startHour, prefs.startMinute)
         val startIntent = createPendingIntent(context, AlarmReceiver.ACTION_START_SERVICE, REQUEST_START)
-        alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, startTime, startIntent)
+        scheduleAlarm(alarmManager, startTime, startIntent)
 
         // 注册停止闹钟（生效结束时间）
         val stopTime = getNextAlarmTime(prefs.endHour, prefs.endMinute)
         val stopIntent = createPendingIntent(context, AlarmReceiver.ACTION_STOP_SERVICE, REQUEST_STOP)
-        alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, stopTime, stopIntent)
+        scheduleAlarm(alarmManager, stopTime, stopIntent)
 
         // 如果当前已在生效时段内，立即启动服务
         if (TimeUtils.isInTimePeriod(
@@ -50,7 +53,7 @@ object AlarmScheduler {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val startTime = getNextAlarmTime(prefs.startHour, prefs.startMinute)
         val startIntent = createPendingIntent(context, AlarmReceiver.ACTION_START_SERVICE, REQUEST_START)
-        alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, startTime, startIntent)
+        scheduleAlarm(alarmManager, startTime, startIntent)
     }
 
     /**
@@ -60,7 +63,7 @@ object AlarmScheduler {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val stopTime = getNextAlarmTime(prefs.endHour, prefs.endMinute)
         val stopIntent = createPendingIntent(context, AlarmReceiver.ACTION_STOP_SERVICE, REQUEST_STOP)
-        alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, stopTime, stopIntent)
+        scheduleAlarm(alarmManager, stopTime, stopIntent)
     }
 
     /**
@@ -97,5 +100,44 @@ object AlarmScheduler {
             context, requestCode, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+    }
+
+    private fun scheduleAlarm(
+        alarmManager: AlarmManager,
+        triggerAtMillis: Long,
+        operation: PendingIntent
+    ) {
+        val canScheduleExact = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            alarmManager.canScheduleExactAlarms()
+        } else {
+            true
+        }
+
+        try {
+            if (shouldUseExactAlarm(Build.VERSION.SDK_INT, canScheduleExact)) {
+                alarmManager.setExactAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerAtMillis,
+                    operation
+                )
+            } else {
+                alarmManager.setAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerAtMillis,
+                    operation
+                )
+            }
+        } catch (e: SecurityException) {
+            Log.w(TAG, "Exact alarm rejected, fallback to inexact while-idle", e)
+            alarmManager.setAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP,
+                triggerAtMillis,
+                operation
+            )
+        }
+    }
+
+    internal fun shouldUseExactAlarm(sdkInt: Int, canScheduleExactAlarms: Boolean): Boolean {
+        return sdkInt < Build.VERSION_CODES.S || canScheduleExactAlarms
     }
 }

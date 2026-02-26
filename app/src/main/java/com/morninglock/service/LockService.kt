@@ -63,7 +63,13 @@ class LockService : Service() {
         super.onDestroy()
         Log.i(TAG, "Service onDestroy")
         unregisterUnlockReceiver()
+        val hadOverlay = overlayManager?.isShowing() == true
         overlayManager?.removeOverlay()
+        if (hadOverlay) {
+            val prefs = LockPreferences(this)
+            prefs.lockStartTimestamp = 0L
+            Log.i(TAG, "Service destroyed while overlay showing, clear lockStartTimestamp")
+        }
     }
 
     private fun registerUnlockReceiver() {

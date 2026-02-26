@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.morninglock.data.LockPreferences
+import com.morninglock.data.LockState
 import com.morninglock.service.LockService
 import com.morninglock.util.AlarmScheduler
 
@@ -25,7 +26,16 @@ class AlarmReceiver : BroadcastReceiver() {
                 AlarmScheduler.rescheduleStart(context, prefs)
             }
             ACTION_STOP_SERVICE -> {
-                context.stopService(Intent(context, LockService::class.java))
+                val now = System.currentTimeMillis()
+                val shouldStop = LockState.shouldStopServiceForWindowEnd(
+                    prefs.lockStartTimestamp,
+                    prefs.lockDurationMillis,
+                    now
+                )
+                if (shouldStop) {
+                    context.stopService(Intent(context, LockService::class.java))
+                    prefs.lockStartTimestamp = 0L
+                }
                 // 注册明天的停止闹钟
                 AlarmScheduler.rescheduleStop(context, prefs)
             }
